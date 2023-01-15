@@ -6,6 +6,7 @@ package luigi // import "github.com/ssbc/go-luigi"
 
 import (
 	"context"
+	"sync"
 
 	"github.com/pkg/errors"
 )
@@ -68,6 +69,35 @@ func Pump(ctx context.Context, dst Sink, src Source) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	panic("unreachable")
+}
+
+// Pump moves values from a source into a sink.
+// PumpWithWaitGroup lets you include a WaitGroup so you know when it's processing vs. waiting.
+//
+// Currently this doesn't work atomically, so if a Sink errors in the
+// Pour call, the value that was read from the source is lost.
+func PumpWithWaitGroup(ctx context.Context, dst Sink, src Source, wg *sync.WaitGroup) error {
+	if psrc, ok := src.(PushSource); ok {
+		return psrc.Push(ctx, dst)
+	}
+
+	for {
+		v, err := src.Next(ctx)
+		wg.Add(1)
+		if IsEOS(err) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+
+		err = dst.Pour(ctx, v)
+		if err != nil {
+			return err
+		}
+		wg.Done()
 	}
 
 	panic("unreachable")
